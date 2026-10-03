@@ -52,6 +52,40 @@ npm run build
 npx wrangler pages deploy dist --project-name=geojson-studio
 ```
 
+### If you connected a *Workers* project instead of Pages
+
+The two look similar in the dashboard but are configured differently. Tell them
+apart from the build log: a Workers build ends with
+`Executing user deploy command: npx wrangler deploy` (or `npx wrangler preview`
+on a non-production branch), while Pages ends by uploading a build output
+directory.
+
+On a Workers project, set **Build command** to `npm run build` and keep the
+deploy command at its default. `wrangler.json` in this repo points the Worker's
+static assets at `./dist` and carries the empty `previews` block that
+`npx wrangler preview` requires:
+
+```json
+{
+  "name": "geojson-studio",
+  "compatibility_date": "2026-10-03",
+  "assets": { "directory": "./dist" },
+  "previews": {}
+}
+```
+
+Two things that will fail the build if they are wrong:
+
+- **`name` must match the Worker's name in the dashboard exactly**, or Workers
+  Builds rejects the deploy.
+- **The build command must not be empty.** Workers Builds runs *build command*
+  then *deploy command*; with no build command, `dist/` never gets created and
+  the deploy uploads nothing.
+
+If you would rather not maintain a Worker, delete `wrangler.json` and use a
+Pages project — for a static SPA that is the simpler of the two, and it needs
+no config file at all.
+
 ### What is in the repo for this
 
 - **`.nvmrc`** — pins Node `22`. Pages v3 ships Node 22.16.0 by default, so
