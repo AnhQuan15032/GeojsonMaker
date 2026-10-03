@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>GeoJSON Studio — Vector Map Exporter (Alight Motion, SVG, KML, PNG)</title>
+  <meta name="description" content="Vector map exporter and GeoJSON editor supporting Alight Motion, SVG, KML, and PNG formats." />
+  <meta property="og:title" content="GeoJSON Studio — Vector Map Exporter (Alight Motion, SVG, KML, PNG)" />
+  <meta property="og:description" content="Vector map exporter and GeoJSON editor supporting Alight Motion, SVG, KML, and PNG formats." />
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -1064,7 +1067,7 @@
 
       <div class="flex gap-2">
         <button onclick="cutSeaFromPolygon(activeSelectedLayer)" class="flex-1 p-2.5 bg-cyan-600 hover:bg-cyan-500 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-900/40">
-          <i data-lucide="scissors" class="w-4 h-4"></i> Cut Sea Here
+          <i data-lucide="scissors" class="w-4 h-4"></i> Fix Coastline / Cut Sea
         </button>
         <button onclick="deleteSelectedOrLast()" class="p-2.5 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800 text-rose-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
           <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
@@ -1961,10 +1964,10 @@
       // OSM streets
       baseTileLayers.standard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
 
-      // CARTO basemaps
-      baseTileLayers.voyager = L.tileLayer(`${CARTO}/rastertiles/voyager/{z}/{x}/{y}{r}.png`, { maxZoom: 19, subdomains: 'abcd' });
-      baseTileLayers.light = L.tileLayer(`${CARTO}/light_all/{z}/{x}/{y}{r}.png`, { maxZoom: 19, subdomains: 'abcd' });
-      baseTileLayers.dark = L.tileLayer(`${CARTO}/dark_all/{z}/{x}/{y}{r}.png`, { maxZoom: 19, subdomains: 'abcd' });
+      // Clean, unwatermarked basemaps
+      baseTileLayers.voyager = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+      baseTileLayers.light = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+      baseTileLayers.dark = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
 
       // Satellite (Esri World Imagery)
       baseTileLayers.satellite = L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 19 });
@@ -1972,7 +1975,7 @@
       // Satellite + labels hybrid: imagery under a transparent label layer
       baseTileLayers.hybrid = L.layerGroup([
         L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 19 }),
-        L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 19, opacity: 0.95 })
+        L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.95 })
       ]);
 
       // Terrain
@@ -1990,21 +1993,21 @@
 
       baseTileLayers.dark.addTo(map);
 
-      // Boundary Overlays (each one is an independent layer instance)
+      // Boundary Overlays (unwatermarked Esri Reference layers)
       borderOverlays.countries = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
         opacity: 0.9,
         zIndex: 500
       }).addTo(map);
 
-      borderOverlays.states = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+      borderOverlays.states = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
         opacity: 0.75,
         zIndex: 510
-      }).addTo(map);
+      });
 
-      borderOverlays.labels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+      borderOverlays.labels = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
         opacity: 0.9,
         zIndex: 520
-      }).addTo(map);
+      });
 
       drawnItems = new L.FeatureGroup();
       map.addLayer(drawnItems);
@@ -2878,7 +2881,7 @@
           loadGeoDataObject(parsed);
           showToast("GeoJSON loaded successfully!");
         } catch (err) {
-          alert("Invalid GeoJSON file format.");
+          showToast("Invalid GeoJSON file format.");
         }
       };
       reader.readAsText(file);
@@ -5043,12 +5046,144 @@
       return landLoadPromise;
     }
 
+    // Helper: checks if a point [lng, lat] is inside a ring [[lng, lat]...] using ray-casting
+    function isPointInRing(pt, ring) {
+      if (!ring || ring.length < 3) return false;
+      const x = pt[0], y = pt[1];
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    // Separate any multi-part or fake-hole geometry into pure, single Polygon features
+    // Prevents SVG renderers from creating horizontal connector bars across the sea
+    function cleanAndSeparatePolygons(geomOrFeature) {
+      if (!geomOrFeature) return [];
+      const geom = geomOrFeature.geometry || geomOrFeature;
+      if (!geom || !geom.coordinates) return [];
+
+      const rawPolygons = [];
+      if (geom.type === 'Polygon') {
+        rawPolygons.push(geom.coordinates);
+      } else if (geom.type === 'MultiPolygon') {
+        geom.coordinates.forEach(coords => rawPolygons.push(coords));
+      }
+
+      const out = [];
+      const baseProps = (geomOrFeature.properties) ? { ...geomOrFeature.properties } : {};
+
+      rawPolygons.forEach(rings => {
+        if (!rings || rings.length === 0) return;
+        const exterior = rings[0];
+        if (!exterior || exterior.length < 3) return;
+
+        if (rings.length === 1) {
+          out.push({
+            type: 'Feature',
+            properties: { ...baseProps },
+            geometry: { type: 'Polygon', coordinates: [exterior] }
+          });
+          return;
+        }
+
+        // Multiple rings: verify whether subsequent rings are real interior holes
+        // or disconnected exterior rings (which cause horizontal bridge stripes if kept as holes)
+        const realHoles = [];
+        const disconnectedRings = [];
+
+        for (let r = 1; r < rings.length; r++) {
+          const ring = rings[r];
+          if (!ring || ring.length < 3) continue;
+
+          // Test a sample vertex of the ring
+          const samplePt = ring[0];
+          if (isPointInRing(samplePt, exterior)) {
+            realHoles.push(ring);
+          } else {
+            // Ring is outside the exterior: it is a separate disconnected piece!
+            disconnectedRings.push(ring);
+          }
+        }
+
+        out.push({
+          type: 'Feature',
+          properties: { ...baseProps },
+          geometry: { type: 'Polygon', coordinates: [exterior, ...realHoles] }
+        });
+
+        disconnectedRings.forEach(sepRing => {
+          out.push({
+            type: 'Feature',
+            properties: { ...baseProps },
+            geometry: { type: 'Polygon', coordinates: [sepRing] }
+          });
+        });
+      });
+
+      return out;
+    }
+
+    // Automatically heal any layer whose geometry has fake holes or horizontal bridging artifacts
+    function healLayerGeometryIfCorrupted(layer) {
+      if (!layer || !(layer instanceof L.Polygon)) return layer;
+      const geo = layer.toGeoJSON();
+      if (!geo || !geo.geometry || geo.geometry.type !== 'Polygon') return layer;
+      const rings = geo.geometry.coordinates;
+      if (!rings || rings.length <= 1) return layer;
+
+      const ext = rings[0];
+      let hasExternalHole = false;
+      for (let i = 1; i < rings.length; i++) {
+        if (!isPointInRing(rings[i][0], ext)) {
+          hasExternalHole = true;
+          break;
+        }
+      }
+
+      if (!hasExternalHole) return layer;
+
+      const cleaned = cleanAndSeparatePolygons(geo);
+      if (cleaned.length === 0) return layer;
+
+      const primary = cleaned[0];
+      const prevProps = (layer.feature && layer.feature.properties) || {};
+      const color = prevProps.fill || layer.options.fillColor || PREVIEW_COLOR;
+
+      drawnItems.removeLayer(layer);
+      const newLayer = L.geoJSON(primary, {
+        style: { fillColor: color, color: color, fillOpacity: 1, weight: 0, dashArray: null }
+      }).getLayers()[0];
+
+      newLayer.feature = {
+        type: 'Feature',
+        properties: { ...prevProps, fill: color, stroke: color, "fill-opacity": 1, "stroke-width": 0, "stroke-dasharray": null },
+        geometry: primary.geometry
+      };
+
+      drawnItems.addLayer(newLayer);
+      if (activeSelectedLayer === layer) activeSelectedLayer = newLayer;
+
+      newLayer.on('click', () => {
+        activeSelectedLayer = newLayer;
+        populateStyleDrawer(newLayer);
+        onFeatureClick(newLayer);
+      });
+
+      return newLayer;
+    }
+
     async function triggerCutSeaNow() {
-      const layer = activeSelectedLayer || getLastDrawnPolygon();
+      let layer = activeSelectedLayer || getLastDrawnPolygon();
       if (!layer) {
         showToast("Please draw a polygon first!");
         return;
       }
+      layer = healLayerGeometryIfCorrupted(layer);
       cutSeaFromPolygon(layer);
     }
 
@@ -5078,8 +5213,12 @@
         }
       }
 
+      // Target layer may have previous artifacts — heal first
+      targetLayer = healLayerGeometryIfCorrupted(targetLayer);
       const drawnGeo = targetLayer.toGeoJSON();
-      const drawnBbox = turf.bbox(drawnGeo);
+      const sanitizedDrawn = cleanAndSeparatePolygons(drawnGeo);
+      const primaryDrawn = sanitizedDrawn.length > 0 ? sanitizedDrawn[0] : drawnGeo;
+      const drawnBbox = turf.bbox(primaryDrawn);
 
       const candidateLands = landFeaturesList.filter(landPoly => {
         const b = landPoly.bbox;
@@ -5094,12 +5233,12 @@
       const intersectedPieces = [];
       for (const landPoly of candidateLands) {
         try {
-          const result = turf.intersect(drawnGeo, landPoly);
+          const result = turf.intersect(primaryDrawn, landPoly);
           if (result && result.geometry) {
             intersectedPieces.push(result);
           }
         } catch (e) {
-          console.warn(e);
+          console.warn('Coast intersection warning:', e);
         }
       }
 
@@ -5108,27 +5247,68 @@
         return;
       }
 
-      let finalShape = intersectedPieces[0];
-      for (let i = 1; i < intersectedPieces.length; i++) {
-        try {
-          finalShape = turf.union(finalShape, intersectedPieces[i]);
-        } catch (e) {
-          console.warn(e);
+      // Flatten and extract all pure single Polygon pieces
+      const allCleanPolys = [];
+      for (const piece of intersectedPieces) {
+        const flattened = (typeof turf !== 'undefined' && turf.flatten) ? turf.flatten(piece).features : [piece];
+        flattened.forEach(f => {
+          const cleaned = cleanAndSeparatePolygons(f);
+          allCleanPolys.push(...cleaned);
+        });
+      }
+
+      if (allCleanPolys.length === 0) {
+        showToast("No land shape could be computed.");
+        return;
+      }
+
+      // Rank by area (largest landmass first)
+      const ranked = allCleanPolys.map(poly => {
+        let area = 0;
+        try { area = turf.area(poly); } catch (e) { area = 1; }
+        const bbox = computeGeoBbox(poly.geometry);
+        return { poly, area, bbox };
+      }).sort((a, b) => b.area - a.area);
+
+      const primary = ranked[0];
+      const maxArea = primary.area;
+
+      // Filter out opposite-shore clipping artifacts:
+      // A piece is an opposite-shore artifact if it is small (< 15% of maxArea)
+      // and touches the outer edge of drawnBbox across open water.
+      const keptSecondary = [];
+      for (let i = 1; i < ranked.length; i++) {
+        const item = ranked[i];
+        const isSmall = item.area < maxArea * 0.15;
+        const touchesOuterEdge = (
+          Math.abs(item.bbox[0] - drawnBbox[0]) < 0.02 ||
+          Math.abs(item.bbox[2] - drawnBbox[2]) < 0.02 ||
+          Math.abs(item.bbox[1] - drawnBbox[1]) < 0.02 ||
+          Math.abs(item.bbox[3] - drawnBbox[3]) < 0.02
+        );
+        if (isSmall && touchesOuterEdge) continue; // Skip accidental opposite-shore slivers!
+
+        // If it is a significant island or territory (>= 2% of area), keep it as its own clean layer!
+        if (item.area >= maxArea * 0.02) {
+          keptSecondary.push(item.poly);
         }
       }
 
       const prevProps = (targetLayer.feature && targetLayer.feature.properties) || {};
       const keepColor = prevProps.fill || targetLayer.options.fillColor || nextUniqueColor();
 
+      // Remove the old target layer
       drawnItems.removeLayer(targetLayer);
-      const newLayer = L.geoJSON(finalShape, {
+
+      // Create primary layer as a pure single Polygon
+      const newLayer = L.geoJSON(primary.poly, {
         style: { fillColor: keepColor, color: keepColor, fillOpacity: 1, weight: 0, dashArray: null }
       }).getLayers()[0];
 
       newLayer.feature = {
         type: "Feature",
         properties: { ...prevProps, fill: keepColor, stroke: keepColor, "fill-opacity": 1, "stroke-width": 0, "stroke-dasharray": null },
-        geometry: newLayer.toGeoJSON().geometry
+        geometry: primary.poly.geometry
       };
 
       drawnItems.addLayer(newLayer);
@@ -5139,8 +5319,36 @@
         onFeatureClick(newLayer);
       });
 
+      // Add any genuine islands as their own separate clean layers
+      keptSecondary.forEach((secPoly, idx) => {
+        const secLayer = L.geoJSON(secPoly, {
+          style: { fillColor: keepColor, color: keepColor, fillOpacity: 1, weight: 0, dashArray: null }
+        }).getLayers()[0];
+        secLayer.feature = {
+          type: "Feature",
+          properties: {
+            ...prevProps,
+            name: `${prevProps.name || 'Region'} (Island ${idx + 1})`,
+            fill: keepColor,
+            stroke: keepColor,
+            "fill-opacity": 1,
+            "stroke-width": 0,
+            "stroke-dasharray": null
+          },
+          geometry: secPoly.geometry
+        };
+        drawnItems.addLayer(secLayer);
+        secLayer.on('click', () => {
+          activeSelectedLayer = secLayer;
+          populateStyleDrawer(secLayer);
+          onFeatureClick(secLayer);
+        });
+      });
+
+      populateStyleDrawer(newLayer);
+      updateMobileSelectionBar();
       updateStats();
-      showToast("Sea portion cut away! Kept land shape.");
+      showToast("Coastline trimmed cleanly! Kept land shape with no sea artifacts.");
     }
 
     function toggleAutoSeaCut() {
@@ -6967,13 +7175,17 @@
         if (curveModeLayer === old) exitCurveEdgeMode();
       }
 
-      const newLayer = L.geoJSON(feature, { style: { ...(styleOpts || {}) } }).getLayers()[0];
+      // Ensure geometry is clean and single Polygon
+      const cleaned = cleanAndSeparatePolygons(feature);
+      const primaryFeat = (cleaned.length > 0) ? cleaned[0] : feature;
+
+      const newLayer = L.geoJSON(primaryFeat, { style: { ...(styleOpts || {}) } }).getLayers()[0];
       if (!newLayer) return null;
 
       newLayer.feature = {
         type: 'Feature',
         properties: feature.properties || {},
-        geometry: newLayer.toGeoJSON().geometry
+        geometry: primaryFeat.geometry || newLayer.toGeoJSON().geometry
       };
       applyShapeLockStyle(newLayer);
       drawnItems.addLayer(newLayer);
@@ -6983,6 +7195,27 @@
         populateStyleDrawer(newLayer);
         onFeatureClick(newLayer);
       });
+
+      // Add any additional clean disconnected components as separate shapes
+      if (cleaned.length > 1) {
+        for (let i = 1; i < cleaned.length; i++) {
+          const extraLayer = L.geoJSON(cleaned[i], { style: { ...(styleOpts || {}) } }).getLayers()[0];
+          if (extraLayer) {
+            extraLayer.feature = {
+              type: 'Feature',
+              properties: { ...(feature.properties || {}), name: `${feature.properties?.name || 'Region'} (Part ${i + 1})` },
+              geometry: cleaned[i].geometry
+            };
+            applyShapeLockStyle(extraLayer);
+            drawnItems.addLayer(extraLayer);
+            extraLayer.on('click', () => {
+              activeSelectedLayer = extraLayer;
+              populateStyleDrawer(extraLayer);
+              onFeatureClick(extraLayer);
+            });
+          }
+        }
+      }
 
       populateStyleDrawer(newLayer);
       updateStats();
@@ -8667,10 +8900,13 @@
     function updateMobileSelectionBar() {
       const bar = document.getElementById('mobile-selection-bar');
       if (!bar) return;
-      const layer = activeSelectedLayer;
+      let layer = activeSelectedLayer;
       const valid = layer && drawnItems && drawnItems.hasLayer(layer);
       bar.classList.toggle('visible', !!valid);
       if (!valid) return;
+
+      // Auto-heal any layer that has external holes or horizontal artifacts
+      layer = healLayerGeometryIfCorrupted(layer);
 
       const props = (layer.feature && layer.feature.properties) || {};
       const opts = layer.options || {};

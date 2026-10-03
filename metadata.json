@@ -1,0 +1,8 @@
+{
+  "name": "GeoJSON Studio",
+  "description": "Vector map exporter and GeoJSON editor supporting Alight Motion, SVG, KML, and PNG formats.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "permissions": []
+}
