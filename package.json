@@ -1,6 +1,9 @@
 {
   "name": "geojson-studio",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "version": "1.0.0",
   "type": "module",
   "description": "GeoJSON Studio — vector map exporter (Alight Motion, SVG, KML, PNG)",

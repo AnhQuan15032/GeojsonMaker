@@ -16,6 +16,78 @@ npm run build     # production bundle in dist/
 npm run check     # module-graph check + TDZ check + tests
 ```
 
+## Deploying to Cloudflare Pages
+
+The app is 100% client-side — no server, no Pages Functions, no local data
+files. `npm run build` produces a static `dist/` and that is the whole
+deployment.
+
+### Option A — Git integration (recommended)
+
+Connect the repo in the dashboard under **Workers & Pages → Create → Pages →
+Connect to Git**, then set:
+
+| Setting | Value |
+|---|---|
+| Framework preset | Vite |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Root directory | `/` |
+| Build system version | v3 |
+| `NODE_VERSION` env var | **leave unset** |
+
+Leave `NODE_VERSION` unset: the repo's `.nvmrc` pins Node 22, and Cloudflare's
+own docs note the version file and the environment variable can disagree, so
+setting only one of them is what keeps the build deterministic.
+
+Every push to `main` deploys to production; every other branch — including
+this one — gets its own preview URL automatically.
+
+### Option B — direct upload
+
+No repo connection needed:
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name=geojson-studio
+```
+
+### What is in the repo for this
+
+- **`.nvmrc`** — pins Node `22`. Pages v3 ships Node 22.16.0 by default, so
+  this is a guard rail rather than a fix: Vite 5.4 accepts `^18 || >=20`, which
+  both the v2 (18.17.1) and v3 images satisfy. It matters if a future
+  dependency raises its floor.
+- **`public/_headers`** — one-year `immutable` cache for `/assets/*`, since
+  Vite content-hashes those filenames, and `max-age=0, must-revalidate` for
+  `index.html`, the one URL that never changes. Vite copies `public/` verbatim
+  into `dist/`.
+- **`package.json` `engines`** — documents the Node floor for local tooling.
+  Note that Pages v3 **does not** read `engines` to pick a Node version; only
+  `NODE_VERSION` and `.nvmrc` / `.node-version` do.
+
+### Deliberately not included
+
+- **No `_redirects`.** There is no client-side router — every route is `/`. A
+  catch-all `/* /index.html 200` would turn a typo'd URL into a silent copy of
+  the app instead of a 404.
+- **No Content-Security-Policy.** The map pulls tiles from several third-party
+  origins and Leaflet/MapLibre rely on inline styles, `blob:` and `data:` URLs.
+  See the note in `public/_headers`.
+
+### Headroom
+
+Current build: 10 files, 3 MB total, largest file 0.88 MiB — against Pages
+limits of 20,000 files and 25 MiB per file.
+
+### Runtime dependencies stay where they are
+
+Deploying does not change what the app talks to. Tiles and datasets are still
+fetched client-side from OpenStreetMap, ArcGIS, OpenFreeMap, OpenTopoMap, the
+Overpass API and jsDelivr/unpkg, exactly as before. A `*.pages.dev` or custom
+domain origin is fine for all of them. If you later want those cached or
+proxied, that is a Worker in front of the app — a separate piece of work.
+
 ## Layout
 
 ```
